@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nani-dev",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["/Users/toshiakinakao/開発/Claude code/Nani/.claude/dev.sh"],
+      "port": 3000
+    }
+  ]
+}
