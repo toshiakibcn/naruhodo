@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Logo from "@/components/Logo";
 import { LANGUAGES, languageLabel } from "@/lib/languages";
+import { useSpeechInput } from "@/lib/useSpeechInput";
 import {
   clearHistory,
   loadHistory,
@@ -30,6 +31,11 @@ export default function Translator() {
   const [response, setResponse] = useState<TranslateApiResponse | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [copied, setCopied] = useState<string | null>(null);
+
+  const { listening, supported: voiceSupported, toggleListening } = useSpeechInput({
+    onTranscriptChange: setText,
+    getBaseText: () => text,
+  });
 
   useEffect(() => {
     // localStorageはサーバーで読めないため、マウント後にクライアント側で読み込む
@@ -177,7 +183,23 @@ export default function Translator() {
             className="w-full resize-none bg-transparent px-4 py-3 outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
           />
 
-          <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-zinc-200 dark:border-zinc-800">
+            {voiceSupported ? (
+              <button
+                onClick={toggleListening}
+                title={listening ? "音声入力を停止" : "音声入力を開始"}
+                className={`flex items-center justify-center w-9 h-9 rounded-full border transition-colors ${
+                  listening
+                    ? "border-red-400 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 animate-pulse"
+                    : "border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                }`}
+              >
+                🎤
+              </button>
+            ) : (
+              <span />
+            )}
+            <div className="flex items-center gap-2">
             <button
               onClick={() => runRequest("proofread")}
               disabled={!text.trim() || loading !== null}
@@ -192,6 +214,7 @@ export default function Translator() {
             >
               {loading === "translate" ? "翻訳中…" : "翻訳する ↑"}
             </button>
+            </div>
           </div>
         </div>
 
