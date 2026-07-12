@@ -1,9 +1,15 @@
 export type TranslateMode = "translate" | "proofread";
 
+export type ImageInput = {
+  dataUrl: string; // "data:image/png;base64,...."
+  mimeType: string;
+};
+
 export type TranslateRequest = {
   mode: TranslateMode;
   text: string;
   targetLanguage: string; // language code, e.g. "en"
+  image?: ImageInput;
 };
 
 export type ToneVariant = {
@@ -17,6 +23,7 @@ export type TranslateResult = {
   translation: string;
   explanation: string;
   alternatives: ToneVariant[];
+  sourceText?: string; // 画像から読み取った元テキスト（画像翻訳時のみ）
 };
 
 export type ProofreadResult = {

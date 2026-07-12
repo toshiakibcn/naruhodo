@@ -1,0 +1,10 @@
+name = "naruhodo-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+ALLOWED_ORIGIN = "https://naruhodo-phi.vercel.app"
+
+# シークレットは `wrangler secret put <NAME>` で設定してください（このファイルには書かない）:
+#   ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY のいずれか
+#   WORKER_SECRET

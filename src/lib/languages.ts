@@ -3,7 +3,10 @@ export type Language = {
   label: string;
 };
 
+export const AUTO_LANGUAGE = "auto";
+
 export const LANGUAGES: Language[] = [
+  { code: "auto", label: "自動（日⇄英）" },
   { code: "ja", label: "日本語" },
   { code: "en", label: "英語" },
   { code: "ko", label: "韓国語" },

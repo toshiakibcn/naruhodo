@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Logo from "@/components/Logo";
+import { translateEndpoint, translateHeaders } from "@/lib/apiClient";
 import { LANGUAGES, languageLabel } from "@/lib/languages";
 import { useSpeechInput } from "@/lib/useSpeechInput";
 import {
@@ -11,10 +12,20 @@ import {
   type HistoryItem,
 } from "@/lib/history";
 import type {
+  ImageInput,
   TranslateApiError,
   TranslateApiResponse,
   TranslateMode,
 } from "@/lib/types";
+
+function readFileAsImage(file: File): Promise<ImageInput> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ dataUrl: reader.result as string, mimeType: file.type });
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -25,17 +36,29 @@ function newId(): string {
 
 export default function Translator() {
   const [text, setText] = useState("");
-  const [targetLanguage, setTargetLanguage] = useState("en");
+  const [targetLanguage, setTargetLanguage] = useState("auto");
   const [loading, setLoading] = useState<TranslateMode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<TranslateApiResponse | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [copied, setCopied] = useState<string | null>(null);
+  const [image, setImage] = useState<ImageInput | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { listening, supported: voiceSupported, toggleListening } = useSpeechInput({
     onTranscriptChange: setText,
     getBaseText: () => text,
   });
+
+  async function handleImageFile(file: File | null | undefined) {
+    if (!file || !file.type.startsWith("image/")) return;
+    try {
+      setImage(await readFileAsImage(file));
+    } catch {
+      setError("画像の読み込みに失敗しました。");
+    }
+  }
 
   useEffect(() => {
     // localStorageはサーバーで読めないため、マウント後にクライアント側で読み込む
@@ -44,24 +67,39 @@ export default function Translator() {
   }, []);
 
   async function runRequest(mode: TranslateMode) {
-    if (!text.trim() || loading) return;
+    const useImage = mode === "translate" && image !== null;
+    if (!useImage && !text.trim()) return;
+    if (loading) return;
+
     setLoading(mode);
     setError(null);
+    // 送信後は保持しない（サーバー側にも保存されず、その場限りで破棄される）
+    setImage(null);
+
     try {
-      const res = await fetch("/api/translate", {
+      const res = await fetch(translateEndpoint(), {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode, text, targetLanguage }),
+        headers: translateHeaders(),
+        body: JSON.stringify({
+          mode,
+          text,
+          targetLanguage,
+          ...(useImage ? { image } : {}),
+        }),
       });
       const data: TranslateApiResponse | TranslateApiError = await res.json();
       if (!res.ok || "error" in data) {
         throw new Error("error" in data ? data.error : "翻訳に失敗しました。");
       }
       setResponse(data);
+      const sourceText =
+        useImage && data.mode === "translate"
+          ? (data.result.sourceText ?? "（画像）")
+          : text;
       const item: HistoryItem = {
         id: newId(),
         mode,
-        sourceText: text,
+        sourceText,
         targetLanguage,
         response: data,
         createdAt: Date.now(),
@@ -78,6 +116,7 @@ export default function Translator() {
     setText("");
     setResponse(null);
     setError(null);
+    setImage(null);
   }
 
   function restoreHistoryItem(item: HistoryItem) {
@@ -157,7 +196,29 @@ export default function Translator() {
           </div>
         )}
 
-        <div className="w-full max-w-2xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-sm overflow-hidden">
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            void handleImageFile(e.dataTransfer.files?.[0]);
+          }}
+          className={`relative w-full max-w-2xl rounded-2xl border bg-white dark:bg-zinc-950 shadow-sm overflow-hidden transition-colors ${
+            dragging
+              ? "border-blue-400 ring-2 ring-blue-200 dark:ring-blue-900"
+              : "border-zinc-200 dark:border-zinc-800"
+          }`}
+        >
+          {dragging && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-blue-50/90 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 text-sm font-medium pointer-events-none">
+              画像をドロップして翻訳
+            </div>
+          )}
+
           <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-800">
             <span className="text-xs text-zinc-500">
               AIが言語を検出し、翻訳先の言語に翻訳します
@@ -175,45 +236,92 @@ export default function Translator() {
             </select>
           </div>
 
+          {image && (
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={image.dataUrl}
+                alt="アップロードした画像"
+                className="h-16 w-16 rounded-lg object-cover border border-zinc-200 dark:border-zinc-800"
+              />
+              <div className="flex-1 text-xs text-zinc-500">
+                画像内のテキストを翻訳します（送信後、画像はすぐに破棄されます）
+              </div>
+              <button
+                onClick={() => setImage(null)}
+                className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+              >
+                削除
+              </button>
+            </div>
+          )}
+
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="翻訳したいテキストを入力..."
+            onPaste={(e) => {
+              const item = Array.from(e.clipboardData.items).find((i) =>
+                i.type.startsWith("image/")
+              );
+              if (item) {
+                e.preventDefault();
+                void handleImageFile(item.getAsFile());
+              }
+            }}
+            placeholder={image ? "（任意）画像についての補足があれば入力..." : "翻訳したいテキストを入力..."}
             rows={5}
             className="w-full resize-none bg-transparent px-4 py-3 outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
           />
 
           <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-zinc-200 dark:border-zinc-800">
-            {voiceSupported ? (
-              <button
-                onClick={toggleListening}
-                title={listening ? "音声入力を停止" : "音声入力を開始"}
-                className={`flex items-center justify-center w-9 h-9 rounded-full border transition-colors ${
-                  listening
-                    ? "border-red-400 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 animate-pulse"
-                    : "border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
-                }`}
-              >
-                🎤
-              </button>
-            ) : (
-              <span />
-            )}
             <div className="flex items-center gap-2">
-            <button
-              onClick={() => runRequest("proofread")}
-              disabled={!text.trim() || loading !== null}
-              className="rounded-full border border-zinc-300 dark:border-zinc-700 px-4 py-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              {loading === "proofread" ? "添削中…" : "添削する"}
-            </button>
-            <button
-              onClick={() => runRequest("translate")}
-              disabled={!text.trim() || loading !== null}
-              className="rounded-full bg-blue-500 px-5 py-1.5 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              {loading === "translate" ? "翻訳中…" : "翻訳する ↑"}
-            </button>
+              {voiceSupported && (
+                <button
+                  onClick={toggleListening}
+                  title={listening ? "音声入力を停止" : "音声入力を開始"}
+                  className={`flex items-center justify-center w-9 h-9 rounded-full border transition-colors ${
+                    listening
+                      ? "border-red-400 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 animate-pulse"
+                      : "border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                  }`}
+                >
+                  🎤
+                </button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  void handleImageFile(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="画像をアップロード"
+                className="flex items-center justify-center w-9 h-9 rounded-full border border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+              >
+                🖼️
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => runRequest("proofread")}
+                disabled={!text.trim() || !!image || loading !== null}
+                title={image ? "添削モードでは画像を使用できません" : undefined}
+                className="rounded-full border border-zinc-300 dark:border-zinc-700 px-4 py-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading === "proofread" ? "添削中…" : "添削する"}
+              </button>
+              <button
+                onClick={() => runRequest("translate")}
+                disabled={(!text.trim() && !image) || loading !== null}
+                className="rounded-full bg-blue-500 px-5 py-1.5 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading === "translate" ? "翻訳中…" : "翻訳する ↑"}
+              </button>
             </div>
           </div>
         </div>
@@ -226,6 +334,14 @@ export default function Translator() {
 
         {response?.mode === "translate" && (
           <div className="w-full max-w-2xl flex flex-col gap-4">
+            {response.result.sourceText && (
+              <ResultCard label="画像から読み取ったテキスト">
+                <p className="whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-300">
+                  {response.result.sourceText}
+                </p>
+              </ResultCard>
+            )}
+
             <ResultCard
               label={`翻訳結果（${languageLabel(response.result.targetLanguage)} ・ 元言語: ${response.result.detectedLanguage}）`}
               onCopy={() => copyText(response.result.translation, "translation")}

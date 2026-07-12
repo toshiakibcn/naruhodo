@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Cloudflare Workerは独立したプロジェクト（worker/配下に別途lintを持つ）
+    "worker/**",
   ]),
 ]);
 
