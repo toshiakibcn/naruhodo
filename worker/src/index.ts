@@ -216,17 +216,25 @@ async function callOpenAICompatible(
 }
 
 async function runAI(prompt: string, env: Env, image?: ImageInput): Promise<string> {
-  if (env.ANTHROPIC_API_KEY) return callAnthropic(prompt, env, image);
-  if (env.OPENAI_API_KEY) {
-    return callOpenAICompatible(prompt, {
-      providerName: "OpenAI",
-      baseUrl: "https://api.openai.com/v1",
-      apiKey: env.OPENAI_API_KEY,
-      model: env.OPENAI_MODEL || "gpt-4o-mini",
-      supportsVision: true,
-      image,
-    });
+  if (image) {
+    // 画像はDeepSeekが非対応のため、OpenAIを優先し、次点でAnthropicを使う
+    if (env.OPENAI_API_KEY) {
+      return callOpenAICompatible(prompt, {
+        providerName: "OpenAI",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: env.OPENAI_API_KEY,
+        model: env.OPENAI_MODEL || "gpt-4o-mini",
+        supportsVision: true,
+        image,
+      });
+    }
+    if (env.ANTHROPIC_API_KEY) return callAnthropic(prompt, env, image);
+    throw new VisionUnsupportedError(
+      `${env.DEEPSEEK_API_KEY ? "DeepSeek" : "設定されているプロバイダー"}は画像の解析に対応していません。ANTHROPIC_API_KEYまたはOPENAI_API_KEYを設定してください。`
+    );
   }
+
+  // テキストはDeepSeekが使えるなら優先する（コストが低いため）
   if (env.DEEPSEEK_API_KEY) {
     return callOpenAICompatible(prompt, {
       providerName: "DeepSeek",
@@ -234,7 +242,16 @@ async function runAI(prompt: string, env: Env, image?: ImageInput): Promise<stri
       apiKey: env.DEEPSEEK_API_KEY,
       model: env.DEEPSEEK_MODEL || "deepseek-chat",
       supportsVision: false,
-      image,
+    });
+  }
+  if (env.ANTHROPIC_API_KEY) return callAnthropic(prompt, env);
+  if (env.OPENAI_API_KEY) {
+    return callOpenAICompatible(prompt, {
+      providerName: "OpenAI",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: env.OPENAI_API_KEY,
+      model: env.OPENAI_MODEL || "gpt-4o-mini",
+      supportsVision: true,
     });
   }
   throw new AIConfigError("AIプロバイダーが設定されていません。");

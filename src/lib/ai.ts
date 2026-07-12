@@ -141,14 +141,26 @@ function callDeepSeek(prompt: string, image?: ImageInput): Promise<string> {
 
 /** 設定されているプロバイダーでプロンプトを実行し、応答テキストを返す。imageを渡すと画像入力として送信する */
 export async function runAI(prompt: string, image?: ImageInput): Promise<string> {
+  if (image) {
+    // 画像はDeepSeekが非対応のため、OpenAIを優先し、次点でAnthropicを使う
+    if (process.env.OPENAI_API_KEY) {
+      return callOpenAI(prompt, image);
+    }
+    if (process.env.ANTHROPIC_API_KEY) {
+      return callAnthropic(prompt, image);
+    }
+    throw new VisionUnsupportedError(process.env.DEEPSEEK_API_KEY ? "DeepSeek" : "設定されているプロバイダー");
+  }
+
+  // テキストはDeepSeekが使えるなら優先する（コストが低いため）
+  if (process.env.DEEPSEEK_API_KEY) {
+    return callDeepSeek(prompt);
+  }
   if (process.env.ANTHROPIC_API_KEY) {
-    return callAnthropic(prompt, image);
+    return callAnthropic(prompt);
   }
   if (process.env.OPENAI_API_KEY) {
-    return callOpenAI(prompt, image);
-  }
-  if (process.env.DEEPSEEK_API_KEY) {
-    return callDeepSeek(prompt, image);
+    return callOpenAI(prompt);
   }
   throw new AIConfigError();
 }
